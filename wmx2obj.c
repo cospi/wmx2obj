@@ -166,11 +166,11 @@ convert_block(unsigned int         pos,
 }
 
 static int
-convert_segment(unsigned int       pos,
-                VertexIndexData   *vert_idx_data,
-                FILE              *in,
-                FILE              *out,
-                unsigned char     *buf)
+convert_segment(unsigned int     pos,
+                VertexIndexData *vert_idx_data,
+                FILE            *in,
+                FILE            *out,
+                unsigned char   *buf)
 {
 	unsigned long int x, z;
 	int res;
