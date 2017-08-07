@@ -222,6 +222,7 @@ convert_to_obj(unsigned int  start,
 	z1 = end / SEGMENTS_PER_ROW;
 	j = z0 != z1 ? start % SEGMENTS_PER_ROW : 0;
 
+	/* Increment end to simplify loop condition */
 	++end;
 	res = 1;
 	for (i = start; res && i != end; ++i, ++j)
@@ -241,13 +242,8 @@ main(int    argc,
 	if (argc < 3)
 		die("Bad arguments: %s <in> <out> [<start>] [<end>]", argv[0]);
 
-	start = SEGMENT_MIN;
-	if (argc > 3)
-		start = parse_segment_index(argv[3], start, SEGMENT_MAX, "Bad start segment");
-
-	end = SEGMENT_MAX;
-	if (argc > 4)
-		end = parse_segment_index(argv[4], start, SEGMENT_MAX, "Bad end segment");
+	start = argc > 3 ? parse_segment_index(argv[3], SEGMENT_MIN, SEGMENT_MAX, "Bad start segment") : SEGMENT_MIN;
+	end = argc > 4 ? parse_segment_index(argv[4], start, SEGMENT_MAX, "Bad end segment") : SEGMENT_MAX;
 
 	in = fopen(argv[1], "rb");
 	if (!in)
