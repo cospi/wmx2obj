@@ -97,7 +97,10 @@ convert_vertex(unsigned long int    x,
 	by = limit_within_bounds((unsigned int)(buf[2] | (buf[3] << 8)));
 	bz = limit_within_bounds((unsigned int)(buf[4] | (buf[5] << 8)));
 
-	fprintf(out, "v %.3Lf %.3Lf %.3Lf\n", (x + bx) * scale, by * scale, (z + bz) * scale);
+	fprintf(out, "v %.3Lf %.3Lf %.3Lf\n",
+	        (x + bx) * scale,
+	             by  * scale,
+	        (z + bz) * scale);
 
 	return !ferror(out);
 }
@@ -111,7 +114,8 @@ convert_polygon(VertexIndexData     *vert_idx_data,
 
 	fputc('f', out);
 	for (i = 0; i != VERTICES_PER_POLYGON; ++i) {
-		unsigned long int vert = vert_idx_data->prev_vert_max + buf[i];
+		unsigned long int vert = vert_idx_data->prev_vert_max
+		                         + buf[i];
 		fprintf(out, " %lu", vert);
 		if (vert > vert_idx_data->vert_max)
 			vert_idx_data->vert_max = vert;
@@ -136,7 +140,10 @@ convert_block(unsigned int         pos,
 	offset_loc = GROUP_ID_SIZE + pos * BLOCK_OFFSET_SIZE;
 	buf += offset_loc;
 
-	offset = (unsigned long int)(buf[0] | (buf[1] << 8UL) | (buf[2] << 16UL) | (buf[3] << 24UL));
+	offset = (unsigned long int)(   buf[0]
+	                             | (buf[1] <<  8UL)
+	                             | (buf[2] << 16UL)
+	                             | (buf[3] << 24UL));
 	if (offset > BLOCK_OFFSET_MAX) {
 		fputs("Block offset too large\n", stderr);
 		return 0;
@@ -240,10 +247,17 @@ main(int    argc,
 	FILE *in, *out;
 
 	if (argc < 3)
-		die("Bad arguments: %s <in> <out> [<start>] [<end>]", argv[0]);
+		die("Bad arguments: %s <in> <out> [<start>] [<end>]",
+		    argv[0]);
 
-	start = argc > 3 ? parse_segment_index(argv[3], SEGMENT_MIN, SEGMENT_MAX, "Bad start segment") : SEGMENT_MIN;
-	end = argc > 4 ? parse_segment_index(argv[4], start, SEGMENT_MAX, "Bad end segment") : SEGMENT_MAX;
+	start = argc > 3
+	        ? parse_segment_index(argv[3], SEGMENT_MIN, SEGMENT_MAX,
+	                              "Bad start segment")
+	        : SEGMENT_MIN;
+	end = argc > 4
+	      ? parse_segment_index(argv[4], start, SEGMENT_MAX,
+	                            "Bad end segment")
+	      : SEGMENT_MAX;
 
 	in = fopen(argv[1], "rb");
 	if (!in)
@@ -255,7 +269,8 @@ main(int    argc,
 		die("Failed to open output file: %s", strerror(errno));
 	}
 
-	printf("Starting conversion of segments %u-%u to %s\n", start, end, argv[2]);
+	printf("Starting conversion of segments %u-%u to %s\n",
+	       start, end, argv[2]);
 	res = convert_to_obj(start, end, in, out);
 	fclose(in);
 	fclose(out);
