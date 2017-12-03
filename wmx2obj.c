@@ -9,6 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define IN_FILE_ARG_LOC      1
+#define OUT_FILE_ARG_LOC     2
+#define NUM_ARGS_MIN         (OUT_FILE_ARG_LOC + 1)
+#define START_ARG_LOC        NUM_ARGS_MIN
+#define END_ARG_LOC          (START_ARG_LOC + 1)
 #define SEGMENT_SIZE         0x9000UL
 #define SEGMENT_MIN          0
 #define SEGMENT_MAX          834
@@ -21,9 +26,11 @@
 #define BLOCK_OFFSET_MAX     (SEGMENT_SIZE - BLOCK_SIZE)
 #define BLOCK_HEADER_SIZE    4
 #define BLOCKS_PER_ROW       4
-#define BLOCK_BOUNDS         (SEGMENT_BOUNDS / BLOCKS_PER_ROW) 
+#define BLOCK_BOUNDS         (SEGMENT_BOUNDS / BLOCKS_PER_ROW)
 #define POLYGON_SIZE         16
 #define VERTEX_SIZE          8
+#define NORMAL_SIZE          8
+#define END_OF_BLOCK_PADDING 4
 #define VERTICES_PER_POLYGON 3
 
 typedef struct VertexIndexData {
@@ -114,7 +121,7 @@ convert_polygon(VertexIndexData     *vert_idx_data,
 
 	fputc('f', out);
 	for (i = 0; i != VERTICES_PER_POLYGON; ++i) {
-		unsigned long int vert = vert_idx_data->prev_vert_max
+		unsigned long int vert =   vert_idx_data->prev_vert_max
 		                         + buf[i];
 		fprintf(out, " %lu", vert);
 		if (vert > vert_idx_data->vert_max)
@@ -134,9 +141,13 @@ convert_block(unsigned int         pos,
               const unsigned char *buf)
 {
 	unsigned long int offset_loc, offset;
-	unsigned char num_polys, num_verts, i;
+	unsigned char num_polys, num_verts, num_norms, i;
 	int res;
 
+	/*
+	 * The segment header starts with a group ID,
+	 * after which come the block offsets.
+	 */
 	offset_loc = GROUP_ID_SIZE + pos * BLOCK_OFFSET_SIZE;
 	buf += offset_loc;
 
@@ -149,10 +160,27 @@ convert_block(unsigned int         pos,
 		return 0;
 	}
 
+	/*
+	 * Obtained offset is from the very beginning,
+	 * so offset_loc is subtracted.
+	 */
 	buf += offset - offset_loc;
 
 	num_polys = buf[0];
 	num_verts = buf[1];
+	/* Normals are not supported, but used for bounds checking. */
+	num_norms = buf[2];
+
+	if ((unsigned long)(  offset
+	                    + BLOCK_HEADER_SIZE
+	                    + num_polys * POLYGON_SIZE
+	                    + num_verts * VERTEX_SIZE
+	                    + num_norms * NORMAL_SIZE
+	                    + END_OF_BLOCK_PADDING)
+	    > SEGMENT_SIZE) {
+		fputs("Block would cause a buffer overflow\n", stderr);
+		return 0;
+	}
 
 	buf += BLOCK_HEADER_SIZE;
 
@@ -221,18 +249,16 @@ convert_to_obj(unsigned int  start,
 		return 0;
 	}
 
-	/* Wavefront OBJ vertex indices start from 1 */
+	/* Wavefront OBJ vertex indices start from 1. */
 	vert_idx_data.prev_vert_max = vert_idx_data.vert_max = 1;
 
-	/* Force output model origin as close to (0, 0, 0) as possible */
+	/* Force output model origin as close to (0, 0, 0) as possible. */
 	z0 = start / SEGMENTS_PER_ROW;
 	z1 = end / SEGMENTS_PER_ROW;
 	j = z0 != z1 ? start % SEGMENTS_PER_ROW : 0;
 
-	/* Increment end to simplify loop condition */
-	++end;
 	res = 1;
-	for (i = start; res && i != end; ++i, ++j)
+	for (i = start; res && i <= end; ++i, ++j)
 		res = convert_segment(j, &vert_idx_data, in, out, buf);
 	free(buf);
 	return res;
@@ -246,31 +272,33 @@ main(int    argc,
 	int res;
 	FILE *in, *out;
 
-	if (argc < 3)
+	if (argc < NUM_ARGS_MIN)
 		die("Bad arguments: %s <in> <out> [<start>] [<end>]",
 		    argv[0]);
 
-	start = argc > 3
-	        ? parse_segment_index(argv[3], SEGMENT_MIN, SEGMENT_MAX,
+	start = argc > START_ARG_LOC
+	        ? parse_segment_index(argv[START_ARG_LOC],
+	                              SEGMENT_MIN, SEGMENT_MAX,
 	                              "Bad start segment")
 	        : SEGMENT_MIN;
-	end = argc > 4
-	      ? parse_segment_index(argv[4], start, SEGMENT_MAX,
+	end = argc > END_ARG_LOC
+	      ? parse_segment_index(argv[END_ARG_LOC],
+	                            start, SEGMENT_MAX,
 	                            "Bad end segment")
 	      : SEGMENT_MAX;
 
-	in = fopen(argv[1], "rb");
+	in = fopen(argv[IN_FILE_ARG_LOC], "rb");
 	if (!in)
 		die("Failed to open input file: %s", strerror(errno));
 
-	out = fopen(argv[2], "w");
+	out = fopen(argv[OUT_FILE_ARG_LOC], "w");
 	if (!out) {
 		fclose(in);
 		die("Failed to open output file: %s", strerror(errno));
 	}
 
 	printf("Starting conversion of segments %u-%u to %s\n",
-	       start, end, argv[2]);
+	       start, end, argv[OUT_FILE_ARG_LOC]);
 	res = convert_to_obj(start, end, in, out);
 	fclose(in);
 	fclose(out);
