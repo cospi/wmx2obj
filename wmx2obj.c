@@ -1,6 +1,6 @@
 /*
  * wmx2obj - Push Final Fantasy 8 world map geometry to Wavefront OBJ format
- * Copyright (C) (2015-)2017 Aleksanteri Hirvonen
+ * Copyright (C) (2015-)2018 Aleksanteri Hirvonen
  */
 
 #include <errno.h>
@@ -9,29 +9,33 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define IN_FILE_ARG_LOC      1
-#define OUT_FILE_ARG_LOC     2
-#define NUM_ARGS_MIN         (OUT_FILE_ARG_LOC + 1)
-#define START_ARG_LOC        NUM_ARGS_MIN
-#define END_ARG_LOC          (START_ARG_LOC + 1)
-#define SEGMENT_SIZE         0x9000UL
-#define SEGMENT_MIN          0
+#define IN_FILE_ARG_LOC  1
+#define OUT_FILE_ARG_LOC (IN_FILE_ARG_LOC  + 1)
+#define NUM_ARGS_MIN     (OUT_FILE_ARG_LOC + 1)
+#define START_ARG_LOC    NUM_ARGS_MIN
+#define END_ARG_LOC      (START_ARG_LOC + 1)
+
+#define SEGMENT_MIN            0
 #define SEGMENT_MAX          834
-#define SEGMENTS_PER_ROW     32
-#define SEGMENT_BOUNDS       8192UL
-#define BLOCKS_PER_SEGMENT   16
+#define SEGMENTS_PER_ROW      32
+#define BLOCKS_PER_SEGMENT    16
+#define BLOCKS_PER_ROW         4
+#define VERTICES_PER_POLYGON   3
+
+#define SEGMENT_SIZE     0x9000UL
+#define SEGMENT_BOUNDS   0x2000UL
+#define BLOCK_SIZE       (SEGMENT_SIZE   / BLOCKS_PER_SEGMENT)
+#define BLOCK_OFFSET_MAX (SEGMENT_SIZE   - BLOCK_SIZE)
+#define BLOCK_BOUNDS     (SEGMENT_BOUNDS / BLOCKS_PER_ROW)
+
 #define GROUP_ID_SIZE        4
 #define BLOCK_OFFSET_SIZE    4
-#define BLOCK_SIZE           (SEGMENT_SIZE / BLOCKS_PER_SEGMENT)
-#define BLOCK_OFFSET_MAX     (SEGMENT_SIZE - BLOCK_SIZE)
 #define BLOCK_HEADER_SIZE    4
-#define BLOCKS_PER_ROW       4
-#define BLOCK_BOUNDS         (SEGMENT_BOUNDS / BLOCKS_PER_ROW)
-#define POLYGON_SIZE         16
-#define VERTEX_SIZE          8
-#define NORMAL_SIZE          8
 #define END_OF_BLOCK_PADDING 4
-#define VERTICES_PER_POLYGON 3
+
+#define POLYGON_SIZE 16
+#define VERTEX_SIZE   8
+#define NORMAL_SIZE   8
 
 typedef struct VertexIndexData {
 	unsigned long int vert_max, prev_vert_max;
@@ -85,6 +89,26 @@ parse_segment_index(const char   *str,
 	return ret;
 }
 
+static void
+parse_segment_range(unsigned int  *start,
+                    unsigned int  *end,
+                    int            argc,
+                    char         **argv)
+{
+#define GET_SEGMENT(loc, min, max, fail, default_val) \
+	(argc > (loc) ? parse_segment_index(argv[(loc)], (min), (max), (fail)) \
+	              : (default_val))
+	*start = GET_SEGMENT(START_ARG_LOC,
+	                     SEGMENT_MIN, SEGMENT_MAX,
+	                     "Bad start segment",
+	                     SEGMENT_MIN);
+	*end   = GET_SEGMENT(END_ARG_LOC,
+	                     *start, SEGMENT_MAX,
+	                     "Bad end segment",
+	                     SEGMENT_MAX);
+#undef GET_SEGMENT
+}
+
 static unsigned int
 limit_within_bounds(unsigned int val)
 {
@@ -121,8 +145,8 @@ convert_polygon(VertexIndexData     *vert_idx_data,
 
 	fputc('f', out);
 	for (i = 0; i != VERTICES_PER_POLYGON; ++i) {
-		unsigned long int vert =   vert_idx_data->prev_vert_max
-		                         + buf[i];
+		unsigned long int vert =
+			  vert_idx_data->prev_vert_max + buf[i];
 		fprintf(out, " %lu", vert);
 		if (vert > vert_idx_data->vert_max)
 			vert_idx_data->vert_max = vert;
@@ -140,8 +164,7 @@ convert_block(unsigned int         pos,
               FILE                *out,
               const unsigned char *buf)
 {
-	unsigned long int offset_loc, offset;
-	unsigned char num_polys, num_verts, num_norms, i;
+	unsigned long int offset_loc, offset, num_polys, num_verts, num_norms, i;
 	int res;
 
 	/*
@@ -171,14 +194,14 @@ convert_block(unsigned int         pos,
 	/* Normals are not supported, but used for bounds checking. */
 	num_norms = buf[2];
 
-	if ((unsigned long)(  offset
-	                    + BLOCK_HEADER_SIZE
-	                    + num_polys * POLYGON_SIZE
-	                    + num_verts * VERTEX_SIZE
-	                    + num_norms * NORMAL_SIZE
-	                    + END_OF_BLOCK_PADDING)
+	if (  offset
+	    + BLOCK_HEADER_SIZE
+	    + num_polys * POLYGON_SIZE
+	    + num_verts * VERTEX_SIZE
+	    + num_norms * NORMAL_SIZE
+	    + END_OF_BLOCK_PADDING
 	    > SEGMENT_SIZE) {
-		fputs("Block would cause a buffer overflow\n", stderr);
+		fputs("Block could cause a buffer overflow\n", stderr);
 		return 0;
 	}
 
@@ -254,8 +277,8 @@ convert_to_obj(unsigned int  start,
 
 	/* Force output model origin as close to (0, 0, 0) as possible. */
 	z0 = start / SEGMENTS_PER_ROW;
-	z1 = end / SEGMENTS_PER_ROW;
-	j = z0 != z1 ? start % SEGMENTS_PER_ROW : 0;
+	z1 = end   / SEGMENTS_PER_ROW;
+	j  = z0 != z1 ? start % SEGMENTS_PER_ROW : 0;
 
 	res = 1;
 	for (i = start; res && i <= end; ++i, ++j)
@@ -273,19 +296,9 @@ main(int    argc,
 	FILE *in, *out;
 
 	if (argc < NUM_ARGS_MIN)
-		die("Bad arguments: %s <in> <out> [<start>] [<end>]",
-		    argv[0]);
+		die("Bad arguments: %s <in> <out> [<start>] [<end>]", argv[0]);
 
-	start = argc > START_ARG_LOC
-	        ? parse_segment_index(argv[START_ARG_LOC],
-	                              SEGMENT_MIN, SEGMENT_MAX,
-	                              "Bad start segment")
-	        : SEGMENT_MIN;
-	end = argc > END_ARG_LOC
-	      ? parse_segment_index(argv[END_ARG_LOC],
-	                            start, SEGMENT_MAX,
-	                            "Bad end segment")
-	      : SEGMENT_MAX;
+	parse_segment_range(&start, &end, argc, argv);
 
 	in = fopen(argv[IN_FILE_ARG_LOC], "rb");
 	if (!in)

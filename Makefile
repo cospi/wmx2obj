@@ -6,4 +6,4 @@ clean :
 	$(RM) wmx2obj
 
 wmx2obj : wmx2obj.c
-	gcc $< -o $@ -Wall -Wextra -Wpedantic
+	gcc $< -o $@ -Wall -Wextra -Wpedantic -ansi
