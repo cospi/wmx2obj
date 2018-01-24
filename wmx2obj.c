@@ -33,9 +33,9 @@
 #define BLOCK_HEADER_SIZE    4
 #define END_OF_BLOCK_PADDING 4
 
-#define POLYGON_SIZE 16
-#define VERTEX_SIZE   8
-#define NORMAL_SIZE   8
+#define POLYGON_SIZE 16UL
+#define VERTEX_SIZE   8UL
+#define NORMAL_SIZE   8UL
 
 typedef struct VertexIndexData {
 	unsigned long int vert_max, prev_vert_max;
@@ -164,7 +164,8 @@ convert_block(unsigned int         pos,
               FILE                *out,
               const unsigned char *buf)
 {
-	unsigned long int offset_loc, offset, num_polys, num_verts, num_norms, i;
+	unsigned long int offset_loc, offset;
+	unsigned char num_polys, num_verts, num_norms, i;
 	int res;
 
 	/*
